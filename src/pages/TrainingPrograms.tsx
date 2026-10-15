@@ -1,7 +1,8 @@
 import { CalendarDays, Check, X } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import PageHeader from "../components/PageHeader";
-import { trainingPrograms } from "../data/mockData";
+import { api } from "../lib/api";
+import { formatDateTime } from "../lib/format";
 import type { TrainingCategory, TrainingProgram } from "../types";
 
 const filters: ("All" | TrainingCategory)[] = [
@@ -24,20 +25,35 @@ const categoryBadge: Record<TrainingCategory, string> = {
 interface ScheduleModalProps {
   program: TrainingProgram;
   onClose: () => void;
+  onSaved: (updated: TrainingProgram) => void;
 }
 
-function ScheduleModal({ program, onClose }: ScheduleModalProps) {
+function ScheduleModal({ program, onClose, onSaved }: ScheduleModalProps) {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("10:00");
   const [seats, setSeats] = useState(String(program.capacity));
   const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
 
   const inputClass =
     "w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30";
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setDone(true);
+    setError("");
+    try {
+      const updated = await api<TrainingProgram>(`/training/${program.id}`, {
+        method: "PATCH",
+        body: {
+          nextSession: new Date(`${date}T${time}`).toISOString(),
+          capacity: Number(seats),
+        },
+      });
+      onSaved(updated);
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not schedule session");
+    }
   };
 
   return (
@@ -140,6 +156,8 @@ function ScheduleModal({ program, onClose }: ScheduleModalProps) {
                 />
               </div>
 
+              {error && <p className="text-sm text-red-600">{error}</p>}
+
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
@@ -164,10 +182,20 @@ function ScheduleModal({ program, onClose }: ScheduleModalProps) {
 }
 
 function TrainingPrograms() {
+  const [programs, setPrograms] = useState<TrainingProgram[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
   const [scheduling, setScheduling] = useState<TrainingProgram | null>(null);
 
-  const visible = trainingPrograms.filter(
+  useEffect(() => {
+    api<TrainingProgram[]>("/training")
+      .then(setPrograms)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const visible = programs.filter(
     (p) => filter === "All" || p.category === filter,
   );
 
@@ -196,6 +224,8 @@ function TrainingPrograms() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {loading && <p className="text-sm text-gray-500">Loading…</p>}
         {visible.map((p) => {
           const pct = Math.round((p.enrolled / p.capacity) * 100);
           const barShade =
@@ -223,7 +253,7 @@ function TrainingPrograms() {
 
                 <div className="flex items-center gap-1.5 text-xs text-gray-400">
                   <CalendarDays className="h-3.5 w-3.5 shrink-0" />
-                  {p.nextSession}
+                  {formatDateTime(p.nextSession)}
                 </div>
 
                 <div className="space-y-1.5">
@@ -260,6 +290,9 @@ function TrainingPrograms() {
         <ScheduleModal
           program={scheduling}
           onClose={() => setScheduling(null)}
+          onSaved={(updated) =>
+            setPrograms((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+          }
         />
       )}
     </div>

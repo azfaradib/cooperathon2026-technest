@@ -4,9 +4,10 @@ import {
   GraduationCap,
   Users,
 } from "lucide-react";
-import { useState } from "react";
-import { trainingPrograms } from "../data/mockData";
-import type { TrainingCategory } from "../types";
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
+import { formatDateTime } from "../lib/format";
+import type { TrainingCategory, TrainingProgram } from "../types";
 
 const filters: ("All" | TrainingCategory)[] = [
   "All",
@@ -26,20 +27,32 @@ const categoryBadge: Record<TrainingCategory, string> = {
 };
 
 function AvailTraining() {
+  const [programs, setPrograms] = useState<TrainingProgram[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
-  const [registered, setRegistered] = useState<Set<string>>(new Set());
 
-  const visible = trainingPrograms.filter(
+  useEffect(() => {
+    api<TrainingProgram[]>("/training")
+      .then(setPrograms)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const visible = programs.filter(
     (p) => filter === "All" || p.category === filter,
   );
 
-  const toggleRegister = (id: string) => {
-    setRegistered((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggleRegister = async (p: TrainingProgram) => {
+    setError("");
+    try {
+      const updated = await api<TrainingProgram>(`/training/${p.id}/register`, {
+        method: p.registered ? "DELETE" : "POST",
+      });
+      setPrograms((prev) => prev.map((x) => (x.id === p.id ? updated : x)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update registration");
+    }
   };
 
   return (
@@ -79,9 +92,12 @@ function AvailTraining() {
         ))}
       </div>
 
+      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {loading && <p className="text-sm text-gray-500">Loading…</p>}
+
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         {visible.map((p) => {
-          const isRegistered = registered.has(p.id);
+          const isRegistered = p.registered;
           const full = p.enrolled >= p.capacity;
           return (
             <div
@@ -104,7 +120,7 @@ function AvailTraining() {
               <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
                 <span className="inline-flex items-center gap-1">
                   <CalendarDays className="h-4 w-4" />
-                  {p.nextSession}
+                  {formatDateTime(p.nextSession)}
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <Users className="h-4 w-4" />
@@ -116,7 +132,7 @@ function AvailTraining() {
                 {isRegistered ? (
                   <button
                     type="button"
-                    onClick={() => toggleRegister(p.id)}
+                    onClick={() => toggleRegister(p)}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100"
                   >
                     <CheckCircle2 className="h-4 w-4" />
@@ -125,7 +141,7 @@ function AvailTraining() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => toggleRegister(p.id)}
+                    onClick={() => toggleRegister(p)}
                     disabled={full}
                     className="w-full rounded-md bg-btn px-4 py-2 text-sm font-semibold text-tertiary hover:bg-btn-hover disabled:cursor-not-allowed disabled:bg-gray-300"
                   >

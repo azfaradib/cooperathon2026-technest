@@ -1,6 +1,9 @@
 import { CheckCircle2, FilePlus2, Paperclip, X } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import Select from "../components/Select";
+import FileThumb from "../components/FileThumb";
+import { api } from "../lib/api";
+import type { IncidentReport } from "../types";
 
 const issueTypes = [
   "Identity Theft",
@@ -14,6 +17,9 @@ const issueTypes = [
 
 const urgencyLevels = ["Low", "Medium", "High"] as const;
 
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
 function FileCase() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -23,11 +29,53 @@ function FileCase() {
   const [description, setDescription] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [referenceId, setReferenceId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [uploadWarning, setUploadWarning] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api<IncidentReport>("/incidents", {
+        method: "POST",
+        body: {
+          resident: fullName,
+          email,
+          phone,
+          issueType,
+          urgency,
+          description,
+        },
+      });
+      setReferenceId(`TNC-${created.id.slice(0, 8).toUpperCase()}`);
+
+      // The case already exists at this point, so an upload failure is only a warning.
+      if (attachments.length > 0) {
+        const form = new FormData();
+        attachments.forEach((f) => form.append("files", f));
+        try {
+          await api(`/incidents/${created.id}/attachments`, {
+            method: "POST",
+            body: form,
+          });
+        } catch (err) {
+          setUploadWarning(
+            `Your case was filed, but the attachments could not be uploaded: ${
+              err instanceof Error ? err.message : "unknown error"
+            }. Please tell the council member who contacts you.`,
+          );
+        }
+      }
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit case");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleFileAnother = () => {
@@ -38,14 +86,25 @@ function FileCase() {
     setUrgency("Medium");
     setDescription("");
     setAttachments([]);
+    setUploadWarning("");
     setSubmitted(false);
   };
 
   const handleFilesPicked = (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const picked = Array.from(e.target.files);
-    setAttachments((prev) => [...prev, ...picked]);
     e.target.value = "";
+
+    if (picked.some((f) => f.size > MAX_FILE_BYTES)) {
+      setError("Each file must be 5 MB or smaller.");
+      return;
+    }
+    if (attachments.length + picked.length > MAX_FILES) {
+      setError(`You can attach at most ${MAX_FILES} files.`);
+      return;
+    }
+    setError("");
+    setAttachments((prev) => [...prev, ...picked]);
   };
 
   const removeAttachment = (idx: number) => {
@@ -73,13 +132,14 @@ function FileCase() {
         <p className="mt-2 text-sm text-gray-600">
           Thank you, {fullName || "resident"}. Your community council has been
           notified and will reach out within 24 hours.
-          {attachments.length > 0 &&
-            ` ${attachments.length} file${attachments.length === 1 ? "" : "s"} attached.`}
         </p>
+        {uploadWarning && (
+          <p className="mt-2 text-sm text-orange-600">{uploadWarning}</p>
+        )}
         <p className="mt-1 text-xs text-gray-500">
           Reference ID:{" "}
           <span className="font-mono font-semibold text-secondary">
-            TNC-{Math.floor(Math.random() * 90000) + 10000}
+            {referenceId}
           </span>
         </p>
         <button
@@ -190,6 +250,7 @@ function FileCase() {
                 ref={fileInputRef}
                 type="file"
                 multiple
+                accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.eml"
                 onChange={handleFilesPicked}
                 className="hidden"
                 aria-label="Add attachments"
@@ -203,8 +264,8 @@ function FileCase() {
                 Add screenshots, emails, or other files
               </button>
               <p className="mt-1.5 text-xs text-gray-500">
-                Anything that helps us understand what happened. Multiple files
-                supported.
+                Anything that helps us understand what happened. Up to 5
+                files, 5 MB each (images, PDF, text, or .eml).
               </p>
 
               {attachments.length > 0 && (
@@ -215,7 +276,7 @@ function FileCase() {
                       className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
                     >
                       <span className="flex min-w-0 items-center gap-2">
-                        <Paperclip className="h-4 w-4 shrink-0 text-gray-500" />
+                        <FileThumb file={file} />
                         <span className="truncate font-medium text-secondary">
                           {file.name}
                         </span>
@@ -244,11 +305,13 @@ function FileCase() {
             Your information stays with your community council and TECH-NEST
             Care staff.
           </p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
-            className="rounded-md bg-btn px-6 py-2.5 text-sm font-semibold text-tertiary hover:bg-btn-hover"
+            disabled={busy}
+            className="rounded-md bg-btn px-6 py-2.5 text-sm font-semibold text-tertiary hover:bg-btn-hover disabled:opacity-60"
           >
-            Submit Case
+            {busy ? "Submitting…" : "Submit Case"}
           </button>
         </div>
       </form>

@@ -4,7 +4,9 @@ import Select from "../components/Select";
 import Button from "../components/Button";
 import Card from "../components/Card";
 import PageHeader from "../components/PageHeader";
-import { supportCases } from "../data/mockData";
+import { api } from "../lib/api";
+import { timeAgo } from "../lib/format";
+import { usePolling } from "../lib/usePolling";
 import type { CasePriority, SupportCase } from "../types";
 
 const priorityBadge: Record<CasePriority, string> = {
@@ -22,31 +24,35 @@ const statusBadge: Record<CaseStatus, string> = {
   Resolved: "bg-emerald-100 text-emerald-700",
 };
 
-const defaultNotes: Record<string, string> = {
-  "Identity Theft":
-    "Resident reported unauthorized use of their SIN and banking credentials. Initial triage complete. Advised to contact Equifax and freeze credit. Follow-up call scheduled.",
-  "Account Takeover":
-    "Social media account compromised via credential stuffing. Password reset completed. 2FA enabled on primary accounts. Monitoring for further activity.",
-  "Malware Cleanup":
-    "Resident's laptop showed signs of adware and a keylogger. Ran Malwarebytes scan — 14 threats removed. System restored from backup. Browser extensions audited.",
-  "Phone Scam Follow-up":
-    "Resident received a CRA impersonation call. No financial loss reported. Educated on common phone scam patterns. Case escalated for community awareness bulletin.",
-  "Phishing Triage":
-    "Spoofed bank email intercepted before credentials were entered. Email headers analyzed and flagged. ISP notified. Resident briefed on identifying future attempts.",
-};
-
-const councilMembers = ["Priya Singh", "Marc Tremblay", "Lucie Bernard", "Jean-Paul Côté"];
-
 // ── Open Case Modal ──────────────────────────────────────────────────────────
 
-function OpenCaseModal({ c, onClose }: { c: SupportCase; onClose: () => void }) {
-  const [status, setStatus] = useState<CaseStatus>("In Progress");
-  const [notes, setNotes] = useState(defaultNotes[c.issueType] ?? "No notes yet.");
+function OpenCaseModal({
+  c,
+  onClose,
+  onSaved,
+}: {
+  c: SupportCase;
+  onClose: () => void;
+  onSaved: (updated: SupportCase) => void;
+}) {
+  const [status, setStatus] = useState<CaseStatus>(c.status);
+  const [notes, setNotes] = useState(c.notes);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(onClose, 1200);
+  const handleSave = async () => {
+    setError("");
+    try {
+      const updated = await api<SupportCase>(`/support-cases/${c.id}`, {
+        method: "PATCH",
+        body: { status, notes },
+      });
+      onSaved(updated);
+      setSaved(true);
+      setTimeout(onClose, 1200);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save case");
+    }
   };
 
   return (
@@ -82,11 +88,17 @@ function OpenCaseModal({ c, onClose }: { c: SupportCase; onClose: () => void }) 
             <div className="space-y-4 px-6 py-5">
               <div className="flex items-center gap-4 text-xs text-gray-500">
                 <span className="inline-flex items-center gap-1.5">
-                  <UserCircle2 className="h-4 w-4" /> {c.assignedTo}
+                  <UserCircle2 className="h-4 w-4" /> {c.assignedTo ?? "Unassigned"}
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <Clock className="h-4 w-4" /> Updated {c.lastUpdate}
+                  <Clock className="h-4 w-4" /> Updated {timeAgo(c.updatedAt)}
                 </span>
+              </div>
+
+              <div>
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">Request</div>
+                <p className="text-sm text-gray-600">{c.description}</p>
+                <p className="mt-1 text-xs text-gray-400">Contact: {c.contact}</p>
               </div>
 
               <div>
@@ -115,6 +127,7 @@ function OpenCaseModal({ c, onClose }: { c: SupportCase; onClose: () => void }) 
                   rows={4}
                   className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
+                {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
               </div>
 
               <div className="flex gap-3 pt-1">
@@ -137,14 +150,16 @@ function OpenCaseModal({ c, onClose }: { c: SupportCase; onClose: () => void }) 
 
 function ReassignModal({
   c,
+  members,
   onClose,
   onConfirm,
 }: {
-  c: SupportCase & { assignedTo: string };
+  c: SupportCase;
+  members: string[];
   onClose: () => void;
   onConfirm: (newAssignee: string) => void;
 }) {
-  const [selected, setSelected] = useState(c.assignedTo);
+  const [selected, setSelected] = useState(c.assignedTo ?? "");
   const [reason, setReason] = useState("");
 
   return (
@@ -166,7 +181,7 @@ function ReassignModal({
         <div className="space-y-4 px-6 py-5">
           <div>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Currently Assigned</div>
-            <div className="text-sm font-medium text-secondary">{c.assignedTo}</div>
+            <div className="text-sm font-medium text-secondary">{c.assignedTo ?? "Unassigned"}</div>
           </div>
 
           <div>
@@ -176,7 +191,7 @@ function ReassignModal({
               onChange={(e) => setSelected(e.target.value)}
               searchable
             >
-              {councilMembers.map((m) => (
+              {members.map((m) => (
                 <option key={m}>{m}</option>
               ))}
             </Select>
@@ -202,7 +217,7 @@ function ReassignModal({
             </button>
             <button
               type="button"
-              disabled={selected === c.assignedTo}
+              disabled={!selected || selected === c.assignedTo}
               onClick={() => { onConfirm(selected); onClose(); }}
               className="flex-1 rounded-lg bg-btn py-2 text-sm font-semibold text-white hover:bg-btn-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -218,9 +233,42 @@ function ReassignModal({
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 function CommunitySupport() {
+  const [cases, setCases] = useState<SupportCase[]>([]);
+  const [members, setMembers] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [openCase, setOpenCase] = useState<SupportCase | null>(null);
-  const [reassignCase, setReassignCase] = useState<(SupportCase & { assignedTo: string }) | null>(null);
-  const [assignees, setAssignees] = useState<Record<string, string>>({});
+  const [reassignCase, setReassignCase] = useState<SupportCase | null>(null);
+
+  usePolling(() => {
+    Promise.all([
+      api<SupportCase[]>("/support-cases"),
+      api<string[]>("/support-cases/assignees"),
+    ])
+      .then(([list, names]) => {
+        setCases(list);
+        setMembers(names);
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  });
+
+  const replaceCase = (updated: SupportCase) =>
+    setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+
+  const reassign = async (c: SupportCase, assignedTo: string) => {
+    setError("");
+    try {
+      replaceCase(
+        await api<SupportCase>(`/support-cases/${c.id}`, {
+          method: "PATCH",
+          body: { assignedTo },
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reassign case");
+    }
+  };
 
   return (
     <div>
@@ -229,9 +277,14 @@ function CommunitySupport() {
         subtitle="Active resident support cases assigned to council members."
       />
 
+      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {!loading && cases.length === 0 && (
+        <p className="text-sm text-gray-500">No support cases yet.</p>
+      )}
+
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {supportCases.map((c) => {
-          const assignedTo = assignees[c.id] ?? c.assignedTo;
+        {cases.map((c) => {
           return (
             <Card key={c.id}>
               <div className="flex flex-col gap-3">
@@ -247,20 +300,22 @@ function CommunitySupport() {
                 <div className="flex flex-col gap-1 text-xs text-gray-500">
                   <span className="inline-flex items-center gap-2">
                     <UserCircle2 className="h-4 w-4" />
-                    Assigned: {assignedTo}
+                    Assigned: {c.assignedTo ?? "Unassigned"}
                   </span>
                   <span className="inline-flex items-center gap-2">
                     <Clock className="h-4 w-4" />
-                    Updated {c.lastUpdate}
+                    Updated {timeAgo(c.updatedAt)}
+                  </span>
+                  <span className={`w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusBadge[c.status]}`}>
+                    {c.status}
                   </span>
                 </div>
                 <div className="mt-1 flex gap-2">
-                  <Button size="sm" onClick={() => setOpenCase({ ...c, assignedTo })}>
+                  <Button size="sm" onClick={() => setOpenCase(c)}>
                     Open Case
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setReassignCase({ ...c, assignedTo })}>
-                    Reassign
-                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setReassignCase(c)}>
+                    {c.assignedTo ? "Reassign" : "Assign"}                  </Button>
                 </div>
               </div>
             </Card>
@@ -269,16 +324,19 @@ function CommunitySupport() {
       </div>
 
       {openCase && (
-        <OpenCaseModal c={openCase} onClose={() => setOpenCase(null)} />
+        <OpenCaseModal
+          c={openCase}
+          onClose={() => setOpenCase(null)}
+          onSaved={replaceCase}
+        />
       )}
 
       {reassignCase && (
         <ReassignModal
           c={reassignCase}
+          members={members}
           onClose={() => setReassignCase(null)}
-          onConfirm={(newAssignee) =>
-            setAssignees((prev) => ({ ...prev, [reassignCase.id]: newAssignee }))
-          }
+          onConfirm={(newAssignee) => reassign(reassignCase, newAssignee)}
         />
       )}
     </div>

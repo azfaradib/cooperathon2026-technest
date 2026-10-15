@@ -1,4 +1,5 @@
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, MessageSquare, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import {
   Link,
   Outlet,
@@ -6,14 +7,16 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import ContactModal from "../components/ContactModal";
 
 function CustomerLayout() {
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [showContact, setShowContact] = useState(false);
 
-  const handleLogOut = () => {
-    signOut();
+  const handleLogOut = async () => {
+    await signOut();
     navigate("/login", { replace: true });
   };
 
@@ -41,13 +44,23 @@ function CustomerLayout() {
             </div>
           </Link>
 
-          <button
-            type="button"
-            onClick={handleLogOut}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-secondary hover:bg-primary-hover"
-          >
-            Log Out
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowContact(true)}
+              className="inline-flex items-center gap-2 rounded-md border border-white/20 px-4 py-2 text-sm font-medium text-tertiary hover:bg-white/10"
+            >
+              <MessageSquare className="h-4 w-4 text-primary" />
+              Contact TECH-NEST
+            </button>
+            <button
+              type="button"
+              onClick={handleLogOut}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-secondary hover:bg-primary-hover"
+            >
+              Log Out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -63,6 +76,8 @@ function CustomerLayout() {
         )}
         <Outlet />
       </main>
+
+      {showContact && <ContactModal onClose={() => setShowContact(false)} />}
     </div>
   );
 }

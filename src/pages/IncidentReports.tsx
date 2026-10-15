@@ -1,11 +1,15 @@
-import { Plus } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { Paperclip, Plus } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
 import Button from "../components/Button";
 import Card from "../components/Card";
+import IncidentDetailModal from "../components/IncidentDetailModal";
 import PageHeader from "../components/PageHeader";
 import Select from "../components/Select";
-import { incidentReports } from "../data/mockData";
-import type { IncidentStatus } from "../types";
+import { api } from "../lib/api";
+import { usePolling } from "../lib/usePolling";
+import type { AdminUser, IncidentReport, IncidentStatus } from "../types";
+
+const statuses: IncidentStatus[] = ["New", "In Progress", "Resolved"];
 
 const statusBadge: Record<IncidentStatus, string> = {
   New: "bg-orange-100 text-orange-700",
@@ -14,17 +18,61 @@ const statusBadge: Record<IncidentStatus, string> = {
 };
 
 function IncidentReports() {
+  const [incidents, setIncidents] = useState<IncidentReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [resident, setResident] = useState("");
   const [issueType, setIssueType] = useState("Identity Theft");
   const [description, setDescription] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [members, setMembers] = useState<string[]>([]);
 
-  const handleSubmit = (e: FormEvent) => {
+  const selected = incidents.find((i) => i.id === selectedId) ?? null;
+  const replaceIncident = (updated: IncidentReport) =>
+    setIncidents((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+
+  useEffect(() => {
+    api<AdminUser[]>("/admins")
+      .then((list) => setMembers(list.map((a) => a.fullName ?? a.email)))
+      .catch(() => {});
+  }, []);
+
+  usePolling(() => {
+    api<IncidentReport[]>("/incidents")
+      .then(setIncidents)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  });
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    alert(`Report logged for ${resident}: ${issueType}`);
-    setResident("");
-    setDescription("");
-    setShowForm(false);
+    setError("");
+    try {
+      const created = await api<IncidentReport>("/incidents", {
+        method: "POST",
+        body: { resident, issueType, description },
+      });
+      setIncidents((prev) => [created, ...prev]);
+      setResident("");
+      setDescription("");
+      setShowForm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save report");
+    }
+  };
+
+  const handleStatusChange = async (id: string, status: IncidentStatus) => {
+    setError("");
+    try {
+      const updated = await api<IncidentReport>(`/incidents/${id}`, {
+        method: "PATCH",
+        body: { status },
+      });
+      replaceIncident(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update status");
+    }
   };
 
   return (
@@ -93,6 +141,12 @@ function IncidentReports() {
       )}
 
       <Card>
+        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+        {loading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : incidents.length === 0 ? (
+          <p className="text-sm text-gray-500">No incident reports yet.</p>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -100,32 +154,67 @@ function IncidentReports() {
                 <th className="pb-3">Resident</th>
                 <th className="pb-3">Issue Type</th>
                 <th className="pb-3">Status</th>
+                <th className="pb-3">Assigned</th>
                 <th className="pb-3">Date</th>
                 <th className="pb-3">Description</th>
+                <th className="pb-3">Files</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {incidentReports.map((r) => (
-                <tr key={r.id} className="text-secondary">
+              {incidents.map((r) => (
+                <tr
+                  key={r.id}
+                  onClick={() => setSelectedId(r.id)}
+                  className="cursor-pointer text-secondary hover:bg-gray-50"
+                >
                   <td className="py-3 font-medium">{r.resident}</td>
                   <td className="py-3">{r.issueType}</td>
-                  <td className="py-3">
-                    <span
+                  <td className="py-3" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={r.status}
+                      onChange={(e) =>
+                        handleStatusChange(r.id, e.target.value as IncidentStatus)
+                      }
                       className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusBadge[r.status]}`}
                     >
-                      {r.status}
-                    </span>
+                      {statuses.map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="py-3 text-gray-600">
+                    {r.assignedTo ?? <span className="text-gray-400">Unassigned</span>}
                   </td>
                   <td className="py-3 text-gray-600">{r.date}</td>
-                  <td className="py-3 text-gray-600 max-w-md">
-                    {r.description}
+                  <td className="max-w-md py-3 text-gray-600">
+                    <span className="line-clamp-2">{r.description}</span>
+                  </td>
+                  <td className="py-3">
+                    {r.attachmentCount ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-secondary">
+                        <Paperclip className="h-3.5 w-3.5" />
+                        {r.attachmentCount}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        )}
       </Card>
+
+      {selected && (
+        <IncidentDetailModal
+          incident={selected}
+          members={members}
+          onClose={() => setSelectedId(null)}
+          onUpdated={replaceIncident}
+        />
+      )}
     </div>
   );
 }

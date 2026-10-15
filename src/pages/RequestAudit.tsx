@@ -1,6 +1,8 @@
 import { CheckCircle2, ScanSearch } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import Select from "../components/Select";
+import { api } from "../lib/api";
+import type { AuditRequest } from "../types";
 
 const auditTargets = [
   "Home Network (Wi-Fi, router)",
@@ -22,10 +24,34 @@ function RequestAudit() {
   const [preferredTime, setPreferredTime] = useState("");
   const [context, setContext] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [referenceId, setReferenceId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api<AuditRequest>("/audit-requests", {
+        method: "POST",
+        body: {
+          name,
+          email,
+          target,
+          deviceCount,
+          contactMethod,
+          preferredTime,
+          context,
+        },
+      });
+      setReferenceId(`TNC-A-${created.id.slice(0, 8).toUpperCase()}`);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send request");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (submitted) {
@@ -47,7 +73,7 @@ function RequestAudit() {
         <p className="mt-1 text-xs text-gray-500">
           Reference ID:{" "}
           <span className="font-mono font-semibold text-secondary">
-            TNC-A-{Math.floor(Math.random() * 90000) + 10000}
+            {referenceId}
           </span>
         </p>
       </div>
@@ -160,11 +186,13 @@ function RequestAudit() {
           <p className="text-xs text-gray-500">
             Audits are free and provided by TECH-NEST volunteers.
           </p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
-            className="rounded-md bg-btn px-6 py-2.5 text-sm font-semibold text-tertiary hover:bg-btn-hover"
+            disabled={busy}
+            className="rounded-md bg-btn px-6 py-2.5 text-sm font-semibold text-tertiary hover:bg-btn-hover disabled:opacity-60"
           >
-            Request Audit
+            {busy ? "Sending…" : "Request Audit"}
           </button>
         </div>
       </form>

@@ -1,21 +1,31 @@
-import { Bell, CircleUserRound, Lightbulb, Megaphone, Mic, ShieldCheck } from "lucide-react";
+import { Bell, CircleUserRound, Megaphone, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { council, recentUpdates } from "../data/mockData";
-
-const updateIcon = { alert: Megaphone, webinar: Mic, tip: Lightbulb } as const;
-const updateBadge = {
-  alert: "bg-orange-100 text-orange-700",
-  webinar: "bg-primary/15 text-secondary",
-  tip: "bg-gray-100 text-gray-600",
-} as const;
+import { api } from "../lib/api";
+import { timeAgo } from "../lib/format";
+import { usePolling } from "../lib/usePolling";
+import type { AppNotification, CouncilSettings } from "../types";
 
 function Header() {
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+  const { pathname } = useLocation();
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [councilName, setCouncilName] = useState("");
+
+  usePolling(() => {
+    api<AppNotification[]>("/notifications").then(setNotifications).catch(() => {});
+  });
+
+  // Refetch on navigation so the council name stays current.
+  useEffect(() => {
+    api<CouncilSettings>("/settings")
+      .then((s) => setCouncilName(s.name))
+      .catch(() => {});
+  }, [pathname]);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -27,8 +37,8 @@ function Header() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  const handleLogOut = () => {
-    signOut();
+  const handleLogOut = async () => {
+    await signOut();
     navigate("/login", { replace: true });
   };
 
@@ -49,7 +59,7 @@ function Header() {
 
         <div className="flex items-center gap-6">
           <div className="text-sm font-medium text-tertiary/90">
-            Welcome, {council.name}
+            Welcome, {councilName}
           </div>
 
           <div ref={notifRef} className="relative">
@@ -60,9 +70,9 @@ function Header() {
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5" />
-              {council.notifications > 0 && (
+              {notifications.length > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white">
-                  {council.notifications}
+                  {notifications.length}
                 </span>
               )}
             </button>
@@ -72,23 +82,29 @@ function Header() {
                 <div className="border-b border-gray-100 px-4 py-3">
                   <div className="text-sm font-semibold text-secondary">Notifications</div>
                 </div>
-                <ul className="divide-y divide-gray-100 py-1">
-                  {recentUpdates.map((u) => {
-                    const Icon = updateIcon[u.type];
-                    return (
-                      <li key={u.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50">
+                <ul className="max-h-96 divide-y divide-gray-100 overflow-y-auto py-1">
+                  {notifications.length === 0 && (
+                    <li className="px-4 py-3 text-sm text-gray-500">
+                      Nothing new.
+                    </li>
+                  )}
+                  {notifications.map((n) => (
+                    <li key={n.id}>
+                      <Link
+                        to={n.to}
+                        onClick={() => setNotifOpen(false)}
+                        className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50"
+                      >
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                          <Icon className="h-4 w-4" />
+                          <Megaphone className="h-4 w-4" />
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-secondary leading-snug">{u.title}</div>
-                          <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${updateBadge[u.type]}`}>
-                            {u.type.charAt(0).toUpperCase() + u.type.slice(1)}
-                          </span>
+                          <div className="text-sm font-medium text-secondary leading-snug">{n.title}</div>
+                          <div className="mt-1 text-xs text-gray-400">{timeAgo(n.createdAt)}</div>
                         </div>
-                      </li>
-                    );
-                  })}
+                      </Link>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}

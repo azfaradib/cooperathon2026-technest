@@ -17,12 +17,16 @@ import { Link } from "react-router-dom";
 import Select from "../components/Select";
 import Card from "../components/Card";
 import StatCard from "../components/StatCard";
-import type { TrainingCategory } from "../types";
-import {
-  incidentReports,
-  supportCases,
-  trainingPrograms,
-} from "../data/mockData";
+import { api } from "../lib/api";
+import { formatDateTime } from "../lib/format";
+import { usePolling } from "../lib/usePolling";
+import type {
+  AuditRequest,
+  IncidentReport,
+  SupportCase,
+  TrainingCategory,
+  TrainingProgram,
+} from "../types";
 
 const categoryIcon: Record<TrainingCategory, React.ElementType> = {
   Phishing: ShieldAlert,
@@ -46,15 +50,31 @@ const statusBadge: Record<string, string> = {
   Resolved: "bg-emerald-100 text-emerald-700",
 };
 
-function NewReportModal({ onClose }: { onClose: () => void }) {
+function NewReportModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (incident: IncidentReport) => void;
+}) {
   const [resident, setResident] = useState("");
   const [issueType, setIssueType] = useState("Identity Theft");
   const [description, setDescription] = useState("");
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    alert(`Report logged for ${resident}: ${issueType}`);
-    onClose();
+    setError("");
+    try {
+      const created = await api<IncidentReport>("/incidents", {
+        method: "POST",
+        body: { resident, issueType, description },
+      });
+      onCreated(created);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save report");
+    }
   };
 
   return (
@@ -100,6 +120,7 @@ function NewReportModal({ onClose }: { onClose: () => void }) {
               className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
               Cancel
@@ -116,33 +137,42 @@ function NewReportModal({ onClose }: { onClose: () => void }) {
 
 function Dashboard() {
   const [showReportModal, setShowReportModal] = useState(false);
+  const [incidentReports, setIncidentReports] = useState<IncidentReport[]>([]);
+  const [supportCases, setSupportCases] = useState<SupportCase[]>([]);
+  const [audits, setAudits] = useState<AuditRequest[]>([]);
+  const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgram[]>([]);
+
+  usePolling(() => {
+    api<IncidentReport[]>("/incidents").then(setIncidentReports).catch(() => {});
+    api<SupportCase[]>("/support-cases").then(setSupportCases).catch(() => {});
+    api<AuditRequest[]>("/audit-requests").then(setAudits).catch(() => {});
+    api<TrainingProgram[]>("/training").then(setTrainingPrograms).catch(() => {});
+  });
 
   const newIncidents = incidentReports.filter((i) => i.status === "New").length;
-  const activeCases = supportCases.length;
-  const featuredTraining = trainingPrograms.find(
-    (t) => t.category === "Phishing",
-  );
+  const activeCases = supportCases.filter((c) => c.status !== "Resolved").length;
+  const pendingAudits = audits.filter((a) => a.status === "New").length;
+  const featuredTraining = trainingPrograms.find((t) => t.nextSession);
   const featuredTrainings = trainingPrograms.slice(0, 3);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Cyber Audit Status"
+          title="Audit Requests"
           icon={Activity}
           accent="primary"
-          actionLabel="View Report"
-          to="/settings"
+          actionLabel="View Requests"
+          to="/audits"
         >
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold text-secondary tracking-tight">
+              {pendingAudits}
             </span>
-            <span className="text-xl font-bold text-secondary">In Progress</span>
+            <span className="text-xs font-medium text-secondary">New</span>
           </div>
           <div className="mt-1 text-xs text-gray-500">
-            3 of 5 sections complete
+            Awaiting review
           </div>
         </StatCard>
 
@@ -154,10 +184,10 @@ function Dashboard() {
           to="/training"
         >
           <div className="text-sm font-semibold text-secondary leading-tight">
-            {featuredTraining?.title ?? "Phishing Awareness Workshop"}
+            {featuredTraining?.title ?? "No sessions scheduled"}
           </div>
           <div className="mt-1 text-xs text-gray-500">
-            {featuredTraining?.nextSession ?? "April 25, 2:00 PM"}
+            {featuredTraining ? formatDateTime(featuredTraining.nextSession) : ""}
           </div>
         </StatCard>
 
@@ -231,7 +261,7 @@ function Dashboard() {
                         <div className="mt-1.5 flex items-center gap-3 text-xs text-gray-500">
                           <span className="inline-flex items-center gap-1">
                             <CalendarDays className="h-3.5 w-3.5" />
-                            {t.nextSession}
+                            {formatDateTime(t.nextSession)}
                           </span>
                           <span className="inline-flex items-center gap-1">
                             <Users className="h-3.5 w-3.5" />
@@ -240,12 +270,12 @@ function Dashboard() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      type="button"
+                    <Link
+                      to="/training"
                       className="shrink-0 rounded-md bg-btn px-3 py-1.5 text-xs font-semibold text-tertiary hover:bg-btn-hover"
                     >
                       Schedule
-                    </button>
+                    </Link>
                   </li>
                 );
               })}
@@ -302,7 +332,10 @@ function Dashboard() {
       </div>
 
       {showReportModal && (
-        <NewReportModal onClose={() => setShowReportModal(false)} />
+        <NewReportModal
+          onClose={() => setShowReportModal(false)}
+          onCreated={(i) => setIncidentReports((prev) => [i, ...prev])}
+        />
       )}
     </div>
   );

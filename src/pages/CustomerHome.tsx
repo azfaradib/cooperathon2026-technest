@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  ClipboardList,
   FilePlus2,
   GraduationCap,
   LifeBuoy,
@@ -48,6 +49,14 @@ const services: Service[] = [
     description:
       "Need ongoing help recovering from an incident or setting up safer accounts? Connect with a councillor.",
     cta: "Get support",
+  },
+  {
+    to: "/my-requests",
+    icon: ClipboardList,
+    title: "My Requests",
+    description:
+      "See the status of the cases, audits, and support requests you have submitted.",
+    cta: "View my requests",
   },
 ];
 

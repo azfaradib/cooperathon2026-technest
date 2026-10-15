@@ -1,10 +1,9 @@
 import {
   AlertTriangle,
   BookOpen,
-  ChevronRight,
   GraduationCap,
   Home,
-  MessageSquare,
+  ScanSearch,
   Settings as SettingsIcon,
   Users,
   type LucideIcon,
@@ -21,6 +20,7 @@ const navItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: Home },
   { to: "/training", label: "Training Programs", icon: GraduationCap },
   { to: "/incidents", label: "Incident Reports", icon: AlertTriangle },
+  { to: "/audits", label: "Audit Requests", icon: ScanSearch },
   { to: "/support", label: "Community Support", icon: Users },
   { to: "/resources", label: "Resources", icon: BookOpen },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
@@ -52,19 +52,6 @@ function Sidebar() {
           ))}
         </ul>
       </nav>
-
-      <div className="px-3 pt-6">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between rounded-md border border-gray-200 px-4 py-2.5 text-sm font-medium text-secondary hover:bg-gray-50"
-        >
-          <span className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-primary" />
-            Contact TECH-NEST
-          </span>
-          <ChevronRight className="h-4 w-4 text-gray-400" />
-        </button>
-      </div>
     </aside>
   );
 }

@@ -1,20 +1,56 @@
-import { ArrowRight, ShieldCheck, User, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { useAuth, type Role } from "../auth/AuthContext";
+import { ShieldCheck } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, Navigate } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
+import { api } from "../lib/api";
+
+const inputClass =
+  "w-full rounded-md border border-gray-300 bg-tertiary px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40";
 
 function Login() {
-  const { signIn } = useAuth();
-  const navigate = useNavigate();
+  const { role, loading, signIn, signUp } = useAuth();
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
-  const handleSignIn = (role: Role) => {
-    signIn(role);
-    navigate(role === "admin" ? "/" : "/customer", { replace: true });
+  useEffect(() => {
+    api<{ needsSetup: boolean }>("/setup/status")
+      .then((s) => setNeedsSetup(s.needsSetup))
+      .catch(() => {});
+  }, []);
+
+  if (!loading && role) {
+    return <Navigate to={role === "admin" ? "/" : "/customer"} replace />;
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setNotice("");
+    setBusy(true);
+    try {
+      if (mode === "signin") {
+        await signIn(email, password);
+      } else if (await signUp(email, password, fullName)) {
+        setNotice("Check your email to confirm your account, then sign in.");
+        setMode("signin");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-linear-to-br from-secondary via-secondary to-slate-800 px-4 py-12">
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-10 flex flex-col items-center text-center">
+      <div className="mx-auto max-w-md">
+        <div className="mb-8 flex flex-col items-center text-center">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/15 ring-1 ring-primary/40">
             <ShieldCheck className="h-8 w-8 text-primary" strokeWidth={2.25} />
           </div>
@@ -22,72 +58,76 @@ function Login() {
             TECH-NEST <span className="italic text-primary">Care</span>
           </h1>
           <p className="mt-1 text-sm text-tertiary/70">
-            Community Cyber Support — Sign In
+            Community Cyber Support —{" "}
+            {mode === "signin" ? "Sign In" : "Create Account"}
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <RoleCard
-            icon={<Users className="h-7 w-7 text-primary" strokeWidth={2.25} />}
-            title="Council / Admin"
-            description="Manage incident reports, training programs, community support cases, and resources."
-            footer="For Peter-McGill Community Council members"
-            onClick={() => handleSignIn("admin")}
-            ctaLabel="Sign in as Admin"
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 rounded-xl bg-tertiary p-6 shadow-lg ring-1 ring-white/10"
+        >
+          {mode === "signup" && (
+            <input
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Full name"
+              className={inputClass}
+            />
+          )}
+          <input
+            required
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            className={inputClass}
           />
-          <RoleCard
-            icon={<User className="h-7 w-7 text-primary" strokeWidth={2.25} />}
-            title="Resident / Customer"
-            description="File a new case if you've been targeted by a cyber incident and need help from your community council."
-            footer="For community residents"
-            onClick={() => handleSignIn("customer")}
-            ctaLabel="Sign in as Customer"
+          <input
+            required
+            type="password"
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className={inputClass}
           />
-        </div>
 
-        <p className="mt-8 text-center text-xs text-tertiary/50">
-          Prototype — no authentication is performed. Role is stored locally.
-        </p>
-      </div>
-    </div>
-  );
-}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {notice && <p className="text-sm text-emerald-700">{notice}</p>}
 
-interface RoleCardProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  footer: string;
-  ctaLabel: string;
-  onClick: () => void;
-}
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full rounded-md bg-btn px-4 py-2.5 text-sm font-semibold text-tertiary transition-colors hover:bg-btn-hover disabled:opacity-60"
+          >
+            {busy ? "Please wait…" : mode === "signin" ? "Sign In" : "Sign Up"}
+          </button>
 
-function RoleCard({
-  icon,
-  title,
-  description,
-  footer,
-  ctaLabel,
-  onClick,
-}: RoleCardProps) {
-  return (
-    <div className="group flex flex-col rounded-xl bg-tertiary p-6 shadow-lg ring-1 ring-white/10 transition-all hover:-translate-y-1 hover:shadow-xl">
-      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/30">
-        {icon}
+          <button
+            type="button"
+            onClick={() => {
+              setMode(mode === "signin" ? "signup" : "signin");
+              setError("");
+            }}
+            className="w-full text-center text-xs text-gray-500 hover:text-secondary"
+          >
+            {mode === "signin"
+              ? "New resident? Create an account"
+              : "Already have an account? Sign in"}
+          </button>
+        </form>
+
+        {needsSetup && (
+          <p className="mt-4 text-center text-xs text-tertiary/70">
+            No admin exists yet.{" "}
+            <Link to="/setup" className="font-semibold text-primary underline">
+              Run first-time setup
+            </Link>
+          </p>
+        )}
       </div>
-      <h2 className="mt-4 text-lg font-bold text-secondary">{title}</h2>
-      <p className="mt-2 flex-1 text-sm text-gray-600">{description}</p>
-      <div className="mt-4 text-[11px] uppercase tracking-wider text-gray-400">
-        {footer}
-      </div>
-      <button
-        type="button"
-        onClick={onClick}
-        className="mt-4 inline-flex items-center justify-center gap-2 rounded-md bg-btn px-4 py-2.5 text-sm font-semibold text-tertiary transition-colors hover:bg-btn-hover"
-      >
-        {ctaLabel}
-        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-      </button>
     </div>
   );
 }

@@ -8,8 +8,15 @@ interface Props {
 }
 
 function RequireAuth({ role, children }: Props) {
-  const { role: current } = useAuth();
+  const { role: current, loading } = useAuth();
 
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-gray-500">
+        Loading…
+      </div>
+    );
+  }
   if (!current) return <Navigate to="/login" replace />;
   if (current !== role) {
     return <Navigate to={current === "admin" ? "/" : "/customer"} replace />;

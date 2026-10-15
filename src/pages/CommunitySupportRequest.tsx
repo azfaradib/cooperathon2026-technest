@@ -1,6 +1,8 @@
 import { CheckCircle2, LifeBuoy } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import Select from "../components/Select";
+import { api } from "../lib/api";
+import type { SupportCase } from "../types";
 
 const supportTypes = [
   "Account recovery help",
@@ -21,10 +23,33 @@ function CommunitySupportRequest() {
   const [description, setDescription] = useState("");
   const [followUp, setFollowUp] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  const [referenceId, setReferenceId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api<SupportCase>("/support-cases", {
+        method: "POST",
+        body: {
+          resident: name,
+          contact,
+          issueType: supportType,
+          priority: urgency,
+          description,
+          followUp,
+        },
+      });
+      setReferenceId(`TNC-S-${created.id.slice(0, 8).toUpperCase()}`);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send request");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (submitted) {
@@ -46,7 +71,7 @@ function CommunitySupportRequest() {
         <p className="mt-1 text-xs text-gray-500">
           Reference ID:{" "}
           <span className="font-mono font-semibold text-secondary">
-            TNC-S-{Math.floor(Math.random() * 90000) + 10000}
+            {referenceId}
           </span>
         </p>
       </div>
@@ -156,11 +181,13 @@ function CommunitySupportRequest() {
           <p className="text-xs text-gray-500">
             All requests are confidential within TECH-NEST Care.
           </p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
-            className="rounded-md bg-btn px-6 py-2.5 text-sm font-semibold text-tertiary hover:bg-btn-hover"
+            disabled={busy}
+            className="rounded-md bg-btn px-6 py-2.5 text-sm font-semibold text-tertiary hover:bg-btn-hover disabled:opacity-60"
           >
-            Send Request
+            {busy ? "Sending…" : "Send Request"}
           </button>
         </div>
       </form>
